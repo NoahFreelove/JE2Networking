@@ -14,7 +14,7 @@ public class Client {
     public String username = "unknown client";
     public int ID = 0;
     public boolean isServerProp = false;
-    public boolean strictReceive = false;
+    public boolean strictReceive = true;
 
     public Client(Socket socket, String username) {
         this.username = username;
@@ -112,22 +112,27 @@ public class Client {
             args = new String[]{""};
 
 
-        if(command.equals(connectedSocket.getInetAddress().getHostAddress()) || !strictReceive) {
-            if (args[0].equals("commands")) {
-                connectedServer.commands = new ArrayList<>();
-                System.out.println("Received Commands:");
-                for (int i = 1; i < args.length; i++) {
-                    connectedServer.commands.add(new Command(Role.CLIENT, args[i]));
-                    System.out.print(args[i] + "\n");
-                }
-            } else if (args[0].equals("id")) {
-                System.out.println("My ID is now: " + args[1]);
-                ID = Integer.parseInt(args[1]);
+        if (!command.equals(connectedSocket.getInetAddress().getHostAddress()) && strictReceive)
+            return;
+
+        if (args[0].equals("commands")) {
+            connectedServer.commands = new ArrayList<>();
+            System.out.println("---Commands---");
+            for (int i = 1; i < args.length; i++) {
+                connectedServer.commands.add(new Command(Role.CLIENT, args[i],"", (args1, initiatedBy) -> {}));
+                System.out.print(args[i] + "\n");
             }
-            else{
-                System.out.println("Received: " + args[0]);
-            }
+            System.out.println("---End Commands---");
+
+        } else if (args[0].equals("id")) {
+            System.out.println("My ID is: " + args[1]);
+            ID = Integer.parseInt(args[1]);
         }
+        else{
+            System.out.println(args[0]);
+        }
+
+
     }
 
     public void send(String message){

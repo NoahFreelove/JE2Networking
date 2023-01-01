@@ -8,7 +8,10 @@ import java.net.Socket;
 public class ClientTest {
     public static void main(String[] args) {
         try {
-            new Client(new Socket("localhost", 6969), "User");
+            String username = "User";
+            if(args.length > 0)
+                username = args[0];
+            new Client(new Socket("localhost", 6969), username);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

@@ -11,24 +11,75 @@ import java.util.Scanner;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Server {
-    public ArrayList<Command> commands = new ArrayList<Command>(Arrays.stream(new Command[]{
-            new Command(Role.CLIENT, "disconnectFromServer"),
-            new Command(Role.CLIENT, "hello"),
-            new Command(Role.CLIENT, "setUsername"),
-            new Command(Role.SERVER, "sendTo"),
-            new Command(Role.SERVER, "sendToAll"),
+
+    public Server(){}
+
+    public Server(Command... defaultCommands){
+        this.commands = new ArrayList<>(Arrays.asList(defaultCommands));
+    }
+
+    volatile CopyOnWriteArrayList<Client> clients = new CopyOnWriteArrayList<>();
+
+    public ArrayList<Command> commands = new ArrayList<>(Arrays.stream(new Command[]{
+            new Command(Role.CLIENT, "disconnectFromServer", "none", (args, initiatedBy) -> {
+                try {
+                    initiatedBy.connectedSocket.close();
+                } catch (IOException e) {
+                    System.out.println("Error closing socket (disconnecting) with client: " + initiatedBy.ID);
+                }
+                clients.remove(initiatedBy);
+            }),
+
+            new Command(Role.CLIENT, "hello", "none", new CommandExec() {
+                @Override
+                public void execute(String[] args, Client initiatedBy) {
+                    serverSendTo(initiatedBy, "Hello " + initiatedBy.ID + "!");
+                }
+            }),
+
+            new Command(Role.CLIENT, "setUsername", "[Arg1 - new username]", (args, initiatedBy) -> {
+                initiatedBy.username = args[0];
+                System.out.println("Client " + initiatedBy.ID + " is now known as " + initiatedBy.username);
+            }),
+
+            new Command(Role.SERVER, "sendTo", "[Arg1 - client index], [Arg2 - message]", (args, initiatedBy) -> {
+                if(Integer.parseInt(args[0]) > clients.size())
+                    return;
+                serverSendTo(clients.get(Integer.parseInt(args[0])), args[1]);
+            }),
+
+            new Command(Role.SERVER, "sendToAll", "[Arg1 - message]", (args, initiatedBy) -> clients.forEach(client -> {
+                try {
+                    serverSendTo(client, "commands," + args[0]);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            })),
+            new Command(Role.CLIENT, "whisper", "[Arg1 - client index], [Arg2 - message]", new CommandExec() {
+                @Override
+                public void execute(String[] args, Client initiatedBy) {
+                    if(Integer.parseInt(args[0]) > clients.size())
+                        return;
+                    serverSendTo(clients.get(Integer.parseInt(args[0])), "whisper from '" + initiatedBy.username + "':\n" + args[1]);
+                }
+            }),
+            new Command(Role.CLIENT, "sync", "none", new CommandExec() {
+                @Override
+                public void execute(String[] args, Client initiatedBy) {
+                    sendClientServerInfo(initiatedBy);
+                }
+            }),
 
     }).toList());
 
     ServerSocket serverSocket;
-    volatile CopyOnWriteArrayList<Client> clients = new CopyOnWriteArrayList<Client>();
 
     public void open(int port) {
         try {
             serverSocket = new ServerSocket();
             serverSocket.bind(new InetSocketAddress(InetAddress.getByName("localhost"), port));
 
-            Thread inputThread = new Thread(this::userInput);
+            Thread inputThread = new Thread(this::serverInput);
             inputThread.start();
 
             Thread queue = new Thread(() -> {
@@ -64,7 +115,7 @@ public class Server {
 
     }
 
-    private void userInput() {
+    private void serverInput() {
         while (true){
 
             Scanner scanner = new Scanner(System.in);
@@ -74,23 +125,11 @@ public class Server {
                 continue;
 
             try {
-
-                switch (split[0]) {
-                    case "sendToAll" -> {
-                        clients.forEach(client -> {
-                            try {
-                                client.send(serverSocket.getInetAddress().getHostAddress() + "," + split[1]);
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
-                        });
+                for (Command c :
+                        commands) {
+                    if(c.command().equals(split[0]) && c.role() == Role.SERVER){
+                        c.exec().execute(Arrays.copyOfRange(split, 1, split.length), null);
                     }
-                    case "sendTo" -> {
-                        if(Integer.parseInt(split[1]) > clients.size())
-                            throw new Exception("Client does not exist");
-                        clients.get(Integer.parseInt(split[1])).send(serverSocket.getInetAddress().getHostAddress() + "," +split[2]);
-                    }
-                    default -> System.out.println("Unknown command");
                 }
 
             } catch (Exception e) {
@@ -100,55 +139,41 @@ public class Server {
     }
 
     public void sendClientServerInfo(Client c){
-        try {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < commands.size(); i++) {
-                if(commands.get(i).role().ordinal() == 0){
-                    sb.append(commands.get(i).command());
-                    if(i != commands.size() - 1){
-                        sb.append(",");
-                    }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < commands.size(); i++) {
+            if(commands.get(i).role().ordinal() == 0){
+                sb.append(commands.get(i).command());
+                if(i != commands.size() - 1){
+                    sb.append(",");
                 }
             }
-
-            c.out.writeUTF(serverSocket.getInetAddress().getHostAddress() + ",commands," + sb);
-            c.out.writeUTF(serverSocket.getInetAddress().getHostAddress() + ",id," + c.ID);
-
-        } catch (IOException e) {
-            System.out.println("Error: " + e);
         }
+
+        serverSendTo(c, "commands," + sb);
+        serverSendTo(c, "id," + c.ID);
     }
 
-    public void readClientInput(String command, Client c){
-        String[] commandSplit = command.split(",");
+    public void readClientInput(String input, Client client){
+        String[] inputSplit = input.split(",");
 
-        // Check if first command is an ip
-        /*if(commandSplit[0].matches("^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$")) {
-            System.out.println("Came from valid IP");
-        }*/
-        if(commandSplit[0] == null)
-            commandSplit = new String[]{""};
+        if(inputSplit[0] == null)
+            inputSplit = new String[]{""};
+        String command = inputSplit[0];
 
-        switch (commandSplit[0]) {
-            case "setUsername" -> {
-                c.username = commandSplit[1];
-                System.out.println("Client " + c.ID + " is now known as " + c.username);
-                return;
-            }
-            case "disconnect" -> {
-                try {
-                    c.connectedSocket.close();
-                } catch (IOException e) {
-                    System.out.println("Error closing socket (disconnecting) with client: " + c.ID);
+        for (Command c :
+                commands) {
+            if(c.command().equals(command)){
+                if(c.role().ordinal() == 0){
+                    c.exec().execute(Arrays.copyOfRange(inputSplit, 1, inputSplit.length), client);
+                    return;
                 }
-                clients.remove(c);
-                return;
             }
         }
-        System.out.println("From " + c.username + ":" + command);
+
+        System.out.println("From " + client.username + ":" + command);
     }
 
-    public void receiveCommand(String command){
-
+    public void serverSendTo(Client c, String message){
+        c.send(serverSocket.getInetAddress().getHostAddress() + ","+ message);
     }
 }

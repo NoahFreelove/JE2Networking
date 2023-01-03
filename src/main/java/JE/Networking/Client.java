@@ -1,11 +1,11 @@
-package JE.networking;
+package JE.Networking;
 
-import JE.networking.Commands.Command;
-import JE.networking.Commands.Role;
-import JE.networking.Events.DisconnectEvent;
-import JE.networking.Events.DisconnectReason;
-import JE.networking.Server.Server;
-import JE.networking.Test.Person;
+import JE.Networking.Commands.Command;
+import JE.Networking.Commands.Role;
+import JE.Networking.Events.DisconnectEvent;
+import JE.Networking.Events.DisconnectReason;
+import JE.Networking.Server.Server;
+import JE.Networking.Test.Person;
 
 import java.io.*;
 import java.lang.reflect.Field;

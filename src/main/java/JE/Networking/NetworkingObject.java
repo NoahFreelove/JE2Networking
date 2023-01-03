@@ -1,4 +1,4 @@
-package JE.networking;
+package JE.Networking;
 
 public interface NetworkingObject {
     boolean hasQueued = false;

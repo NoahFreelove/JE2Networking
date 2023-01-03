@@ -1,4 +1,4 @@
-package JE.networking.Events;
+package JE.Networking.Events;
 
 public enum DisconnectReason {
     UNKNOWN,

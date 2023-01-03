@@ -1,6 +1,6 @@
-package JE.networking.Run;
+package JE.Networking.Run;
 
-import JE.networking.Client;
+import JE.Networking.Client;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -11,7 +11,7 @@ public class ClientTest {
             String username = "User";
             if(args.length > 0)
                 username = args[0];
-            new Client(new Socket("localhost", 6969), username);
+            new Client(new Socket("localhost", 400), username);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

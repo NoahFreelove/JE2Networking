@@ -1,10 +1,10 @@
-package JE.networking.Server;
+package JE.Networking.Server;
 
-import JE.networking.Client;
-import JE.networking.Commands.Command;
-import JE.networking.Commands.CommandExec;
-import JE.networking.Events.DisconnectReason;
-import JE.networking.Commands.Role;
+import JE.Networking.Client;
+import JE.Networking.Commands.Command;
+import JE.Networking.Commands.CommandExec;
+import JE.Networking.Events.DisconnectReason;
+import JE.Networking.Commands.Role;
 
 import java.io.IOException;
 import java.net.*;
@@ -82,10 +82,10 @@ public class Server {
 
     ServerSocket serverSocket;
 
-    public void open(int port) {
+    public void open() {
         try {
             serverSocket = new ServerSocket();
-            serverSocket.bind(new InetSocketAddress(InetAddress.getByName("localhost"), port));
+            serverSocket.bind(new InetSocketAddress(InetAddress.getByName(config.ip), config.port));
 
             Thread inputThread = new Thread(this::serverInput);
             inputThread.start();
@@ -118,7 +118,7 @@ public class Server {
                 }
             });
 
-            System.out.println("Now accepting incoming connections on port: " + port + "; " + serverSocket.getInetAddress().getHostAddress());
+            System.out.println("Now accepting incoming connections on port: " + config.port + "; " + serverSocket.getInetAddress().getHostAddress());
             System.out.println("---Commands---");
             commands.forEach(command -> System.out.println(command.command() + " : " + command.role()));
             System.out.println("---End Commands---");

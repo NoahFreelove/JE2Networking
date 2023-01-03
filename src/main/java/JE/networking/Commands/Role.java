@@ -1,4 +1,4 @@
-package org.networking.Commands;
+package JE.networking.Commands;
 
 public enum Role {
     CLIENT,

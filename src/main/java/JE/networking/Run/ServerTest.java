@@ -1,6 +1,6 @@
-package org.networking.Run;
+package JE.networking.Run;
 
-import org.networking.Server.Server;
+import JE.networking.Server.Server;
 
 public class ServerTest {
     public static void main(String[] args) {

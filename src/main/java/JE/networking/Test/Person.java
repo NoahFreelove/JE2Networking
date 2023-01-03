@@ -1,7 +1,7 @@
-package org.networking.Test;
+package JE.networking.Test;
 
-import org.networking.NetworkingObject;
-import org.networking.SyncVar;
+import JE.networking.NetworkingObject;
+import JE.networking.SyncVar;
 
 import java.io.Serializable;
 

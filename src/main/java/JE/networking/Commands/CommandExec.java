@@ -1,6 +1,6 @@
-package org.networking.Commands;
+package JE.networking.Commands;
 
-import org.networking.Client;
+import JE.networking.Client;
 
 public interface CommandExec {
     void execute(String[] args, Client initiatedBy);

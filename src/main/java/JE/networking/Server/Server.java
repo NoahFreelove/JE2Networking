@@ -1,10 +1,10 @@
-package org.networking.Server;
+package JE.networking.Server;
 
-import org.networking.Client;
-import org.networking.Commands.Command;
-import org.networking.Commands.CommandExec;
-import org.networking.Events.DisconnectReason;
-import org.networking.Commands.Role;
+import JE.networking.Client;
+import JE.networking.Commands.Command;
+import JE.networking.Commands.CommandExec;
+import JE.networking.Events.DisconnectReason;
+import JE.networking.Commands.Role;
 
 import java.io.IOException;
 import java.net.*;

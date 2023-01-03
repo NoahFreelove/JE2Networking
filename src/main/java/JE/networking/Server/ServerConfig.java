@@ -1,4 +1,4 @@
-package org.networking.Server;
+package JE.networking.Server;
 
 import java.util.ArrayList;
 

@@ -1,6 +1,6 @@
-package org.networking.Run;
+package JE.networking.Run;
 
-import org.networking.Client;
+import JE.networking.Client;
 
 import java.io.IOException;
 import java.net.Socket;

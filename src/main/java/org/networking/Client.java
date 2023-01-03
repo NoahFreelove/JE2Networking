@@ -1,9 +1,17 @@
 package org.networking;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
+import org.networking.Commands.Command;
+import org.networking.Commands.Role;
+import org.networking.Events.DisconnectEvent;
+import org.networking.Events.DisconnectReason;
+import org.networking.Server.Server;
+import org.networking.Test.Person;
+
+import java.io.*;
+import java.lang.reflect.Field;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Scanner;
 
 public class Client {
@@ -15,35 +23,47 @@ public class Client {
     public int ID = 0;
     public boolean isServerProp = false;
     public boolean strictReceive = true;
+    public transient String key = null;
+    public boolean connected;
+    public boolean logReceived = false;
+
+    protected DisconnectEvent disconnectEvent = (reason) -> {
+        System.out.println("Client " + ID + " disconnected from server for reason: " + reason);
+    };
+
+    private Person person = new Person("John", "Gamer", 21);
 
     public Client(Socket socket, String username) {
+
         this.username = username;
         try {
             this.connectedSocket = socket;
+            connected = true;
             in = new DataInputStream(socket.getInputStream());
             out = new DataOutputStream(socket.getOutputStream());
             sendClientInfo();
-            Thread readThread = new Thread(this::read);
-            readThread.start();
+            Thread readFromServerThread = new Thread(this::readFromServer);
+            readFromServerThread.start();
 
-            Thread writeThread = new Thread(this::userInput);
+            Thread writeThread = new Thread(this::consoleInput);
             writeThread.start();
         }
         catch (Exception e){
-            System.out.println(e);
+            e.printStackTrace();
+            onDisconnect(DisconnectReason.UNKNOWN);
         }
     }
 
     private void sendClientInfo() {
         try {
-            send("setUsername,"+username);
+            send("setUsername;"+username);
         }
         catch (Exception e) {
             System.out.println(e.getMessage());
         }
     }
 
-    public void userInput() {
+    private void consoleInput() {
         while (true){
             if(isServerProp)
                 break;
@@ -61,6 +81,11 @@ public class Client {
                     }
                     break;
                 }
+                else if (message.equals("send"))
+                {
+                    sendObject(person);
+                    return;
+                }
 
                 send(message);
 
@@ -70,76 +95,210 @@ public class Client {
         }
     }
 
-    public void read(){
+    private void readFromServer(){
         while (true) {
             try {
                 String command = in.readUTF();
-                infoProcessing(command);
+                messageProcessing(command);
 
             } catch (Exception e) {
-                System.out.println("Error: " + e);
+                if(isServerProp)
+                {
+                    connectedServer.softDisconnect(this);
+                    return;
+                }
+                if(connected){
+                    System.out.println("Read Error: " + e);
+                }
                 break;
             }
         }
-        System.out.println("Client " + username + " disconnected");
+        if(isServerProp){
+            //System.out.println("Client " + username + " disconnected");
+            connectedServer.disconnectClient(this, DisconnectReason.CLIENT_DISCONNECTED);
+        }
+        else {
+            if(connected){
+                onDisconnect(DisconnectReason.SERVER_CLOSED);
+            }
+            else
+                onDisconnect(DisconnectReason.UNKNOWN);
+        }
     }
 
-    public void infoProcessing(String input){
+    private void messageProcessing(String input){
         if(isServerProp) {
             connectedServer.readClientInput(input, this);
             return;
         }
 
-        String[] splitInput = input.split(",");
+        String[] splitInput = input.split(";");
+        if(splitInput.length < 2)
+            return;
 
         if(splitInput[0].equals(""))
             splitInput = new String[]{""};
 
-        String command = splitInput[0];
+        String command = splitInput[1];
 
-        String[] args = new String[]{};
-        if(splitInput.length > 1) {
-            args = new String[splitInput.length - 1];
-            System.arraycopy(splitInput, 1, args, 0, splitInput.length - 1);
+        String[] args = new String[splitInput.length - 1];
+
+        boolean trusted = (splitInput[0].equals(key)) || !strictReceive;
+
+        // remove command/key
+        System.arraycopy(splitInput, 1, args, 0, splitInput.length - 1);
+
+
+        // Messages from the server have the first command being its key - remove command
+        if(trusted || key==null){
+            System.arraycopy(args, 1, args, 0, args.length-1);
         }
-        boolean trusted = false;
 
         if(connectedServer == null)
         {
             connectedServer = new Server();
         }
+
         if(args[0] == null)
             args = new String[]{""};
 
+        if(splitInput[0].equals(key))
+            trusted = true;
+        if(logReceived)
+            System.out.println(Arrays.toString(splitInput));
 
-        if (!command.equals(connectedSocket.getInetAddress().getHostAddress()) && strictReceive)
-            return;
+        // check if primitive command as they take priority
+        if(trusted || !strictReceive || key==null)
+            primitiveMessageProcessing(command,args,trusted);
 
-        if (args[0].equals("commands")) {
-            connectedServer.commands = new ArrayList<>();
-            System.out.println("---Commands---");
-            for (int i = 1; i < args.length; i++) {
-                connectedServer.commands.add(new Command(Role.CLIENT, args[i],"", (args1, initiatedBy) -> {}));
-                System.out.print(args[i] + "\n");
+        processCommand(command,args,trusted);
+    }
+
+    // override this with your own commands
+    protected void processCommand(String command, String[] args, boolean trusted) {
+    }
+
+    private void primitiveMessageProcessing(String command, String[] args, boolean trusted) {
+
+        if(key == null){
+            if(command.equals("KEY")){
+                key = args[0];
+                System.out.println("Set key to:" + key);
             }
-            System.out.println("---End Commands---");
-
-        } else if (args[0].equals("id")) {
-            System.out.println("My ID is: " + args[1]);
-            ID = Integer.parseInt(args[1]);
+            return;
         }
-        else{
-            System.out.println(args[0]);
+        if(!trusted)
+            return;
+        switch (command) {
+            case "commands" -> {
+                connectedServer.commands = new ArrayList<>();
+                System.out.println("---Commands---");
+                for (String arg : args) {
+                    connectedServer.commands.add(new Command(Role.CLIENT, arg, "", (args1, initiatedBy) -> {
+                    }));
+                    System.out.print(arg + "\n");
+                }
+                System.out.println("---End Commands---");
+            }
+
+            case "id" -> {
+                System.out.println("My ID is: " + args[0]);
+                ID = Integer.parseInt(args[0]);
+            }
+            case "DISCONNECT"->{
+                onDisconnect(DisconnectReason.values()[Integer.parseInt(args[0])]);
+            }
+            case "OBJUPDATE" -> {
+                onObjectProcessed(processObject(args[0], args[1], args[2]));
+            }
+
+            default -> System.out.println(args[0]);
         }
+    }
 
-
+    protected void onObjectProcessed(Object processedObject){
+        System.out.println(processedObject.toString());
     }
 
     public void send(String message){
         try {
             out.writeUTF(message);
         } catch (Exception e) {
-            System.out.println("Error: " + e);
+            if(isServerProp)
+            {
+                connectedServer.softDisconnect(this);
+                return;
+            }
+            if(connected){
+                System.out.println("Send Error: " + e);
+            }
+
         }
+    }
+
+
+    public void sendObject(Object object){
+       byte[] bytes = serialize(object);
+       send("OBJSEND;" + bytes.length + ";" + object.getClass().getName() + ";" + Arrays.toString(bytes));
+
+    }
+
+    private Object processObject(String numBytes, String className, String byteArr){
+        try {
+            int byteLength = Integer.parseInt(numBytes);
+            byte[] bytes = new byte[byteLength];
+
+            // Clean incoming bytes
+            String byteString = byteArr;
+            byteString = byteString.replace("[", "");
+            byteString = byteString.replace("]", "");
+            byteString = byteString.replace(",", "");
+
+            String[] byteStringSplit = byteString.split(" ");
+            for (int i = 0; i < byteStringSplit.length; i++) {
+                bytes[i] = Byte.parseByte(byteStringSplit[i]);
+            }
+
+            // Read to object
+            ByteArrayInputStream in = new ByteArrayInputStream(bytes);
+            ObjectInputStream is = new ObjectInputStream(in);
+            return is.readObject();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return new Object();
+    }
+
+    public byte[] serialize(Object obj) {
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ObjectOutputStream oos = new ObjectOutputStream(baos);
+
+            // Make sure class implements NetworkingObject
+            if(!(obj instanceof NetworkingObject))
+                return null;
+
+            Field[] fields = obj.getClass().getDeclaredFields();
+            for (Field field : fields) {
+
+                if (field.isAnnotationPresent(SyncVar.class) ) {
+                    System.out.println("Syncing field: " + field.getName());
+                    field.setAccessible(true);
+                    oos.writeObject(field.get(obj));
+                }
+            }
+            return baos.toByteArray();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private void onDisconnect(DisconnectReason reason){
+        if(!connected)
+            return;
+        connected = false;
+        disconnectEvent.onDisconnect(reason);
     }
 }

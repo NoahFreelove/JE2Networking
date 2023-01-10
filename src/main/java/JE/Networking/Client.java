@@ -5,6 +5,7 @@ import JE.Networking.Commands.Role;
 import JE.Networking.Events.DisconnectEvent;
 import JE.Networking.Events.DisconnectReason;
 import JE.Networking.Server.Server;
+import JE.Networking.Server.PacketManager;
 import JE.Networking.Test.Person;
 
 import java.io.*;
@@ -26,6 +27,9 @@ public class Client {
     public transient String key = null;
     public boolean connected;
     public boolean logReceived = false;
+
+    public byte[] packetBuffer = new byte[0];
+    public boolean isInPacket = false;
 
     protected DisconnectEvent disconnectEvent = (reason) -> {
         System.out.println("Client " + ID + " disconnected from server for reason: " + reason);
@@ -189,7 +193,19 @@ public class Client {
         }
         if(!trusted)
             return;
+        if(command.equals("ENDPACKET")){
+            isInPacket = false;
+            return;
+        }
+        if(isInPacket)
+        {
+            packetAppend(command, args);
+
+        }
         switch (command) {
+            case "STARTPACKET"->{
+                isInPacket = true;
+            }
             case "commands" -> {
                 connectedServer.commands = new ArrayList<>();
                 System.out.println("---Commands---");
@@ -209,19 +225,41 @@ public class Client {
                 onDisconnect(DisconnectReason.values()[Integer.parseInt(args[0])]);
             }
             case "OBJUPDATE" -> {
-                onObjectProcessed(processObject(args[0], args[1], args[2]));
+                onObjectProcessed(packetBuffer,processObject(packetBuffer));
             }
 
             default -> System.out.println(args[0]);
         }
     }
 
-    protected void onObjectProcessed(Object processedObject){
+    public void packetAppend(String command, String[] args) {
+        int byteCount = Integer.parseInt(command);
+
+        byte[] newBytes = stringToByteArray(byteCount, args[0]);
+
+        // Append newBytes to packetBuffer
+        byte[] result = new byte[packetBuffer.length + newBytes.length];
+
+        // copy array1 into result
+        System.arraycopy(packetBuffer, 0, result, 0, packetBuffer.length);
+
+        // copy array2 into result starting at the end of array1
+        System.arraycopy(newBytes, 0, result, packetBuffer.length, newBytes.length);
+
+        packetBuffer = result;
+    }
+
+    protected void onObjectProcessed(byte[] originalBytes,Object processedObject){
         System.out.println(processedObject.toString());
     }
 
     public void send(String message){
         try {
+            byte[]data = message.getBytes();
+            if(data.length > 65535){
+                System.out.println("Cannot send data in one packet. Send as packets instead.");
+                return;
+            }
             out.writeUTF(message);
         } catch (Exception e) {
             if(isServerProp)
@@ -239,28 +277,30 @@ public class Client {
 
     public void sendObject(Object object){
        byte[] bytes = serialize(object);
-       send("OBJSEND;" + bytes.length + ";" + object.getClass().getName() + ";" + Arrays.toString(bytes));
+       PacketManager.sendPacket("", Arrays.toString(bytes),bytes.length, 65530, out, "");
 
     }
 
-    private Object processObject(String numBytes, String className, String byteArr){
+    public static byte[] stringToByteArray(int byteLength, String byteArr){
+        byte[] bytes = new byte[byteLength];
+
+        // Clean incoming bytes
+        String byteString = byteArr;
+        byteString = byteString.replace("[", "");
+        byteString = byteString.replace("]", "");
+        byteString = byteString.replace(",", "");
+
+        String[] byteStringSplit = byteString.split(" ");
+        for (int i = 0; i < byteStringSplit.length; i++) {
+            bytes[i] = Byte.parseByte(byteStringSplit[i]);
+        }
+        return bytes;
+    }
+
+    public Object processObject(byte[] byteArr){
         try {
-            int byteLength = Integer.parseInt(numBytes);
-            byte[] bytes = new byte[byteLength];
-
-            // Clean incoming bytes
-            String byteString = byteArr;
-            byteString = byteString.replace("[", "");
-            byteString = byteString.replace("]", "");
-            byteString = byteString.replace(",", "");
-
-            String[] byteStringSplit = byteString.split(" ");
-            for (int i = 0; i < byteStringSplit.length; i++) {
-                bytes[i] = Byte.parseByte(byteStringSplit[i]);
-            }
-
             // Read to object
-            ByteArrayInputStream in = new ByteArrayInputStream(bytes);
+            ByteArrayInputStream in = new ByteArrayInputStream(byteArr);
             ObjectInputStream is = new ObjectInputStream(in);
             return is.readObject();
 

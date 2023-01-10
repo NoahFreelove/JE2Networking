@@ -69,14 +69,10 @@ public class Server {
             }),
             new Command(Role.SERVER, "unban", "[Arg1 - client IP]", (args, initiatedBy) -> unbanIP(args[0])),
             new Command(Role.SERVER, "kick", "[Arg1 - client index]", (args, initiatedBy) -> disconnectClient(clients.get(Integer.parseInt(args[0])), DisconnectReason.KICKED)),
-
-            new Command(Role.CLIENT, "OBJSEND", "[Arg1 - num bytes], [Arg2 - class name], [Arg3 - serialized object]", new CommandExec() {
-                @Override
-                public void execute(String[] args, Client initiatedBy) {
-
-                    sendObjectToClients(initiatedBy, args[0], args[1], args[2]);
-                }
+            new Command(Role.CLIENT, "STARTPACKET", "", (args, initiatedBy) -> {
+                initiatedBy.isInPacket = true;
             }),
+
 
     }).toList());
 
@@ -188,8 +184,18 @@ public class Server {
 
         if(inputSplit[0] == null)
             inputSplit = new String[]{""};
+        //System.out.println("From " + client.username + ":" + Arrays.toString(inputSplit));
 
         String command = inputSplit[0];
+
+        if(client.isInPacket){
+            if(command.equals("ENDPACKET")){
+                sendObjectToClients(client, client.packetBuffer);
+                client.isInPacket = false;
+                return;
+            }
+            client.packetAppend(command,Arrays.copyOfRange(inputSplit,1,inputSplit.length));
+        }
 
         boolean found = false;
         for (Command c :
@@ -204,7 +210,6 @@ public class Server {
         }
         if(found)
             return;
-        System.out.println("From " + client.username + ":" + command);
     }
 
     public void serverSendTo(Client c, String message){
@@ -220,14 +225,12 @@ public class Server {
         c.send(c.key + ";"+ sb);
     }
 
-    public void sendObjectToClients(Client ignore, String numBytes, String className, String bytes){
-        System.out.println("Received");
-        //System.out.println(numBytes + " \n" + className + " \n" + bytes);
+    public void sendObjectToClients(Client ignore, byte[] bytes){
         for (Client c :
                 clients) {
             if(c != ignore){
-                serverSendTo(c, "OBJUPDATE", numBytes, className ,bytes);
             }
+            PacketManager.sendPacket(c.key + ";",Arrays.toString(bytes),bytes.length,65535,c.out,"OBJUPDATE");
         }
     }
 
